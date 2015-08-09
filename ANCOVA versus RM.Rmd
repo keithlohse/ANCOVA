@@ -1,0 +1,156 @@
+---
+title: "To ANCOVA or RM ANOVA?"
+author: "Keith Lohse"
+date: "Sunday, August 09, 2015"
+output: html_document
+---
+
+This R Markdown Document contains the code necessary to simulate correlated data for mixed-factorial designs. Specifically, we will simulate pre-test and post-test data for two different groups (a treatment group and control group). The code allows you to control the correlation between the time points and the size of the treatment effect. In Part 1, we will use this simulated data to run 10,000 different "experiments" that will allow us to compare the consistency, efficiency, and bias of two different analytical methods: (1) analysis of covariance (ANCOVA) controlling for pre-test scores and (2) repeated measures analysis of variances (RM ANOVA) where time and group are both factors.
+
+```{r}
+# To ANCOVA or RM ANOVA? That is the question...
+
+set.seed(2) #Set the seed number for consistent, replicable simulations.
+x<-rnorm(100000,0,1) #Our X variable is a standard normal distribution.
+
+#Setting the correlation between observations
+r<-0.5 #You can adjust the correlation between X and Y to be whatever you want. By default I make it 0.5
+
+#Setting the size of our treatment effect
+d<-0.5 #This is a Cohen's d (standardized effect size) that we will add into our data to create our "treatment" effect
+
+e1<-rnorm(100000,0,sqrt((1-r^2))) #A random error term with an SD = sqrt(1-r squared)
+e2<-rnorm(100000,0,sqrt((1-r^2))) #A random error term with an SD = sqrt(1-r squared)
+#The SD is equal to unexplained variance because we are literally going to make this variable the part of y that is not explained by X.
+cor.test(e1,x) #Ideally, there should be 0 correlation between X and the error term in order to get our correlation between X and Y perfect. 0.001 is close enough! :)
+
+#Creating our y-variable:
+ynull<-r*x+e1 #We can now create ynull, which is a proportion of x (r*x) plus the variance (e) that is not explained by x.
+yeff<-r*x+e2+d #
+
+cor.test(ynull,x) #This correlation will tell you what the true population correlation (rho) is across all of your data.
+cor.test(yeff,x) #The value of rho should very closely agree with the value you set for 'r' above.
+mean(x)
+mean(ynull)
+mean(yeff)
+
+POPnull<-data.frame(x,ynull)
+POPeff<-data.frame(x,yeff)
+
+head(POPnull)
+
+#Now we need to get ready to sample our population a bunch of times.
+index<-c(1:10000) # set the number of samples that you want to take
+n1 <- 20 #set the size of each group in the sample (ie, the number of paired observations)
+#n2 <- 15 #If you want to create groups of different sizes, you can do that as well, but be sure to change the relevant references in the for-loop.
+
+DATA<-data.frame(index) #Create a dataframe to store the correlation coefficients from our sample data
+
+#A tricky thing is that we need to sample pairs of data (both and x and y).
+#Thus, we cannot sample them separately and we need to sample rows of paired observations from the POP dataframe
+# To do this, we use the following: SAMP<- POP[sample(nrow(POP),n1),]
+# This creates a dataframe inside the for loop to hold matched pairs for each sample
+# The summary stats from each sample are then written to the other dataframe DATA
+
+#This for loop will randomly sample rows from the population of size n1 to create four outputs: the correlation coefficient,
+#the variance of x, the variance of z, and the covariance of x and z
+for (i in 1:length(DATA$index)) {
+  #Sample data for the control group:
+  ctrl<-POPnull[sample(nrow(POPnull), n1),]
+    
+  #Sample data for the treatment group 
+  exp<-POPeff[sample(nrow(POPeff), n1),]
+    
+  Pre<-c(ctrl$x,exp$x) #The "pretest" column in each sample contains control and experimental group data
+  Post<-c(ctrl$ynull,exp$yeff) #The "post-test" colum in each sample contains control and experimental group data
+  Group<-c(rep("ctrl", n1),rep("exp", n1)) #Creating labels for the control and experimental groups
+  Exp.c<-c(rep(-1, n1),rep(1, n1)) #Creating a contrast codes for the control and expeirmental groups (Exp = 1 by default)
+  dat<-data.frame(Pre,Post,Group,Exp.c) #Merging all of our new variables into a dataframe
+  dat$Diff<-dat$Post-dat$Pre #We can then also calculate the difference score that will be used in the RM ANOVA
+  
+  #Model 0: Predicting post test scores with a constant only.
+  m0<-lm(dat$Post~1)
+  DATA$m0SSRes[i]<-sum(resid(m0)^2)
+  DATA$m0int[i]<-m0$coefficients[1] #Saves the coefficient of the intercept to DATA$m0int
+  
+  #Model 1: Predicting post-test scores as a function of the pretest
+  m1<-lm(dat$Post~dat$Pre)
+  DATA$m1SSRes[i]<-sum(resid(m1)^2)
+  DATA$m1int[i]<-m1$coefficients[1] #Saves the coefficient of the intercept to DATA$m1int
+  DATA$m1Pre[i]<-m1$coefficients[2] #Saves the coefficient of the slope to DATA$m1Pre
+  
+  #Model 2: The full ANCOVA model: The effect of group controlling for pretest.
+  m2<-lm(dat$Post~dat$Pre+dat$Exp.c)
+  DATA$m2SSRes[i]<-sum(resid(m2)^2)
+  DATA$m2int[i]<-m2$coefficients[1]
+  DATA$m2Pre[i]<-m2$coefficients[2]
+  DATA$m2Group[i]<-m2$coefficients[3]
+  
+  #Model 3: Predicting difference scores with a constant only.
+  m3<-lm(dat$Diff~1)
+  DATA$m3SSRes[i]<-sum(resid(m3)^2)
+  DATA$m3int[i]<-m3$coefficients[1]
+  
+  #Model 4: The full RM ANOVA model: The effect of group is the Group x Time interaction in a 'traditional' RM ANOVA
+  m4<-lm(dat$Diff~dat$Exp.c)
+  DATA$m4SSRes[i]<-sum(resid(m4)^2)
+  DATA$m4int[i]<-m4$coefficients[1]
+  DATA$m4Group[i]<-m4$coefficients[2]
+}
+
+head(DATA)
+DATA$ANCr2<-(DATA$m1SSRes-DATA$m2SSRes)/DATA$m1SSRes
+DATA$ANC_F_NUM<-((DATA$m1SSRes-DATA$m2SSRes)/DATA$m1SSRes)/1
+DATA$ANC_F_DENOM<-(1-((DATA$m1SSRes-DATA$m2SSRes)/DATA$m1SSRes))/(40-3)
+DATA$ANC_Fobs<-DATA$ANC_F_NUM/DATA$ANC_F_DENOM #Calculate F Observed for the ANCOVA model.
+DATA$ANC_Sig<-as.numeric(DATA$ANC_Fobs>qf(0.957,1,37))
+
+DATA$RMr2<-(DATA$m3SSRes-DATA$m4SSRes)/DATA$m3SSRes
+DATA$RM_F_NUM<-((DATA$m3SSRes-DATA$m4SSRes)/DATA$m3SSRes)/1
+DATA$RM_F_DENOM<-(1-((DATA$m3SSRes-DATA$m4SSRes)/DATA$m3SSRes))/(40-2)
+DATA$RM_Fobs<-DATA$RM_F_NUM/DATA$RM_F_DENOM #Calculate F Observed for the RM ANOVA model.
+DATA$RM_Sig<-as.numeric(DATA$RM_Fobs>qf(0.957,1,38))
+
+
+write.csv(DATA, file="ANCOVA_SIM_DATA.csv") #Output the result of the simulations to you working directory.
+```
+
+
+We can also use the same code (outside of the for loop) to generate data for a single "experiment".
+```{r}
+##############################
+# Generating a single sample.#
+##############################
+
+set.seed(4) #Set the seed to whatever you like in order to create reliable results.
+
+#Sample data for the control group:
+ctrl<-POPnull[sample(nrow(POPnull), 20),]
+ctrl
+
+#Sample data for the treatment group 
+exp<-POPeff[sample(nrow(POPeff), 20),]
+exp
+
+Pre<-c(ctrl$x,exp$x) #Our "pretest" column combines data from groups on the pretest
+Post<-c(ctrl$ynull,exp$yeff) #Our "postrest" column combines data from groups on the post-test.
+Group<-c(rep("ctrl",20),rep("exp",20))
+Exp.c<-c(rep(-1,20),rep(1,20))
+dat<-data.frame(Pre,Post,Group,Exp.c)
+dat
+dat$Diff<-dat$Post-dat$Pre
+
+write.csv(dat, file="ANCOVA_DATA.csv")
+
+m0<-lm(dat$Post~dat$Exp.c)
+summary(m0)
+
+m1<-lm(dat$Post~dat$Exp.c+dat$Pre)
+summary(m1)
+
+m2<-lm(dat$Diff~dat$Exp.c)
+summary(m2)
+
+summary(m3)
+
+```
