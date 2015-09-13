@@ -1,7 +1,7 @@
 ---
 title: "To ANCOVA or RM ANOVA?"
 author: "Keith Lohse"
-date: "Sunday, August 09, 2015"
+date: "Sunday, September 13, 2015"
 output: html_document
 ---
 
@@ -100,16 +100,16 @@ for (i in 1:length(DATA$index)) {
 
 head(DATA)
 DATA$ANCr2<-(DATA$m1SSRes-DATA$m2SSRes)/DATA$m1SSRes
-DATA$ANC_F_NUM<-((DATA$m1SSRes-DATA$m2SSRes)/DATA$m1SSRes)/1
-DATA$ANC_F_DENOM<-(1-((DATA$m1SSRes-DATA$m2SSRes)/DATA$m1SSRes))/(40-3)
-DATA$ANC_Fobs<-DATA$ANC_F_NUM/DATA$ANC_F_DENOM #Calculate F Observed for the ANCOVA model.
-DATA$ANC_Sig<-as.numeric(DATA$ANC_Fobs>qf(0.957,1,37))
-
+DATA$ANC_MS_REG<-((DATA$m1SSRes-DATA$m2SSRes)/DATA$m1SSRes)/1
+DATA$ANC_MS_RES<-(1-((DATA$m1SSRes-DATA$m2SSRes)/DATA$m1SSRes))/((n1*2)-3)
+DATA$ANC_Fobs<-DATA$ANC_MS_REG/DATA$ANC_MS_RES
+DATA$ANC_Sig<-as.numeric(DATA$ANC_Fobs>qf(0.95,1,((n1*2)-3)))
+  
 DATA$RMr2<-(DATA$m3SSRes-DATA$m4SSRes)/DATA$m3SSRes
-DATA$RM_F_NUM<-((DATA$m3SSRes-DATA$m4SSRes)/DATA$m3SSRes)/1
-DATA$RM_F_DENOM<-(1-((DATA$m3SSRes-DATA$m4SSRes)/DATA$m3SSRes))/(40-2)
-DATA$RM_Fobs<-DATA$RM_F_NUM/DATA$RM_F_DENOM #Calculate F Observed for the RM ANOVA model.
-DATA$RM_Sig<-as.numeric(DATA$RM_Fobs>qf(0.957,1,38))
+DATA$RM_MS_REG<-((DATA$m3SSRes-DATA$m4SSRes)/DATA$m3SSRes)/1
+DATA$RM_MS_RES<-(1-((DATA$m3SSRes-DATA$m4SSRes)/DATA$m3SSRes))/((n1*2)-2)
+DATA$RM_Fobs<-DATA$RM_MS_REG/DATA$RM_MS_RES
+DATA$RM_Sig<-as.numeric(DATA$RM_Fobs>qf(0.95,1,((n1*2)-2)))
 
 
 write.csv(DATA, file="ANCOVA_SIM_DATA.csv") #Output the result of the simulations to you working directory.
